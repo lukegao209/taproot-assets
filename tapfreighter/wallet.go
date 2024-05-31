@@ -1708,8 +1708,7 @@ func addAnchorPsbtInputs(btcPkt *psbt.Packet, vPkt *tappsbt.VPacket,
 
 	// With this, we can now calculate the total fee we need to pay. We'll
 	// also make sure to round up the required fee to the floor.
-	totalWeight := int64(weightEstimator.Weight())
-	requiredFee := feeRate.FeeForWeight(totalWeight)
+	requiredFee := feeRate.FeeForWeight(weightEstimator.Weight())
 
 	// Given the current fee (which doesn't account for our input) and the
 	// total fee we want to pay, we'll adjust the wallet's change output

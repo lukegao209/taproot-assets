@@ -19,6 +19,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/node"
 	"github.com/lightningnetwork/lnd/lntest/wait"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/stretchr/testify/require"
 )
@@ -154,11 +155,12 @@ func testRoundTripSend(t *harnessTest) {
 	// control block. The control block will be weighted by the passed
 	// tapscript, so we only need to add the length of the other two items.
 	estimator.AddTapscriptInput(
-		len(hashLockPreimage)+len(scriptLeaf.Script)+1, tapscript,
+		lntypes.WeightUnit(
+			len(hashLockPreimage)+len(scriptLeaf.Script)+1,
+		), tapscript,
 	)
 	estimator.AddP2WKHOutput()
-	estimatedWeight := int64(estimator.Weight())
-	requiredFee := feeRate.FeeForWeight(estimatedWeight)
+	requiredFee := feeRate.FeeForWeight(estimator.Weight())
 
 	tx := wire.NewMsgTx(2)
 	tx.TxIn = []*wire.TxIn{{
