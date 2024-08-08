@@ -23,6 +23,7 @@ import (
 	lfn "github.com/lightningnetwork/lnd/fn"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -57,13 +58,13 @@ type DecodedView struct {
 // settles, timeouts and fee updates found in both logs. The resulting view
 // returned reflects the current state of HTLCs within the remote or local
 // commitment chain, and the current commitment fee rate.
-func ComputeView(ourBalance, theirBalance uint64, isOurCommit bool,
-	original *lnwallet.HtlcView) (uint64, uint64, *DecodedView,
-	*lnwallet.HtlcView, error) {
+func ComputeView(ourBalance, theirBalance uint64,
+	whoseCommit lntypes.ChannelParty, original *lnwallet.HtlcView) (uint64,
+	uint64, *DecodedView, *lnwallet.HtlcView, error) {
 
-	log.Tracef("Computing view, ourCommit=%v, ourAssetBalance=%d, "+
+	log.Tracef("Computing view, whoseCommit=%v, ourAssetBalance=%d, "+
 		"theirAssetBalance=%d, ourUpdates=%d, theirUpdates=%d",
-		isOurCommit, ourBalance, theirBalance, len(original.OurUpdates),
+		whoseCommit, ourBalance, theirBalance, len(original.OurUpdates),
 		len(original.TheirUpdates))
 
 	newView := &DecodedView{
@@ -143,7 +144,7 @@ func ComputeView(ourBalance, theirBalance uint64, isOurCommit bool,
 
 				local, remote = processRemoveEntry(
 					decodedEntry, local, remote,
-					isOurCommit, true, nextHeight,
+					whoseCommit, true, nextHeight,
 				)
 			}
 		}
@@ -186,7 +187,7 @@ func ComputeView(ourBalance, theirBalance uint64, isOurCommit bool,
 				}
 				local, remote = processRemoveEntry(
 					decodedEntry, local, remote,
-					isOurCommit, false, nextHeight,
+					whoseCommit, false, nextHeight,
 				)
 			}
 		}
@@ -229,7 +230,7 @@ func ComputeView(ourBalance, theirBalance uint64, isOurCommit bool,
 			AssetBalances:     assetHtlc.Balances(),
 		}
 		local, remote = processAddEntry(
-			decodedEntry, local, remote, isOurCommit, false,
+			decodedEntry, local, remote, whoseCommit, false,
 			nextHeight,
 		)
 
@@ -269,7 +270,7 @@ func ComputeView(ourBalance, theirBalance uint64, isOurCommit bool,
 			AssetBalances:     assetHtlc.Balances(),
 		}
 		local, remote = processAddEntry(
-			decodedEntry, local, remote, isOurCommit, true,
+			decodedEntry, local, remote, whoseCommit, true,
 			nextHeight,
 		)
 
@@ -284,12 +285,12 @@ func ComputeView(ourBalance, theirBalance uint64, isOurCommit bool,
 // processRemoveEntry processes the removal of an HTLC from the commitment
 // transaction. It returns the updated balances for both parties.
 func processRemoveEntry(htlc *DecodedDescriptor, ourBalance,
-	theirBalance uint64, isOurCommit, isIncoming bool,
+	theirBalance uint64, whoseCommit lntypes.ChannelParty, isIncoming bool,
 	nextHeight uint64) (uint64, uint64) {
 
 	// Ignore any removal entries which have already been processed.
 	removeHeight := lnwallet.RemoveHeight(
-		htlc.PaymentDescriptor, !isOurCommit,
+		htlc.PaymentDescriptor, whoseCommit,
 	)
 	if *removeHeight != nextHeight {
 		return ourBalance, theirBalance
@@ -332,10 +333,11 @@ func processRemoveEntry(htlc *DecodedDescriptor, ourBalance,
 // processAddEntry processes the addition of an HTLC to the commitment
 // transaction. It returns the updated balances for both parties.
 func processAddEntry(htlc *DecodedDescriptor, ourBalance, theirBalance uint64,
-	isOurCommit, isIncoming bool, nextHeight uint64) (uint64, uint64) {
+	whoseCommit lntypes.ChannelParty, isIncoming bool,
+	nextHeight uint64) (uint64, uint64) {
 
 	// Ignore any add entries which have already been processed.
-	addHeight := lnwallet.AddHeight(htlc.PaymentDescriptor, !isOurCommit)
+	addHeight := lnwallet.AddHeight(htlc.PaymentDescriptor, whoseCommit)
 	if *addHeight != nextHeight {
 		return ourBalance, theirBalance
 	}
@@ -360,12 +362,12 @@ func processAddEntry(htlc *DecodedDescriptor, ourBalance, theirBalance uint64,
 // and/or remote anchor output.
 func SanityCheckAmounts(ourBalance, theirBalance btcutil.Amount,
 	ourAssetBalance, theirAssetBalance uint64, view *DecodedView,
-	chanType channeldb.ChannelType, isOurs bool,
+	chanType channeldb.ChannelType, whoseCommit lntypes.ChannelParty,
 	dustLimit btcutil.Amount) (bool, bool, error) {
 
-	log.Tracef("Sanity checking amounts, ourCommit=%v, ourBalance=%d, "+
+	log.Tracef("Sanity checking amounts, whoseCommit=%v, ourBalance=%d, "+
 		"theirBalance=%d, ourAssetBalance=%d, theirAssetBalance=%d",
-		isOurs, ourBalance, theirBalance, ourAssetBalance,
+		whoseCommit, ourBalance, theirBalance, ourAssetBalance,
 		theirAssetBalance)
 
 	var (
@@ -374,7 +376,7 @@ func SanityCheckAmounts(ourBalance, theirBalance btcutil.Amount,
 	)
 	for _, entry := range view.OurUpdates {
 		isDust := lnwallet.HtlcIsDust(
-			chanType, false, isOurs, feePerKw,
+			chanType, false, whoseCommit, feePerKw,
 			entry.Amount.ToSatoshis(), dustLimit,
 		)
 		if rfqmsg.Sum(entry.AssetBalances) > 0 && isDust {
@@ -389,7 +391,7 @@ func SanityCheckAmounts(ourBalance, theirBalance btcutil.Amount,
 	}
 	for _, entry := range view.TheirUpdates {
 		isDust := lnwallet.HtlcIsDust(
-			chanType, true, isOurs, feePerKw,
+			chanType, true, whoseCommit, feePerKw,
 			entry.Amount.ToSatoshis(), dustLimit,
 		)
 		if rfqmsg.Sum(entry.AssetBalances) > 0 && isDust {
@@ -439,13 +441,14 @@ func SanityCheckAmounts(ourBalance, theirBalance btcutil.Amount,
 // GenerateCommitmentAllocations generates allocations for a channel commitment.
 func GenerateCommitmentAllocations(prevState *cmsg.Commitment,
 	chanState *channeldb.OpenChannel, chanAssetState *cmsg.OpenChannel,
-	isOurCommit bool, ourBalance, theirBalance lnwire.MilliSatoshi,
-	originalView *lnwallet.HtlcView, chainParams *address.ChainParams,
+	whoseCommit lntypes.ChannelParty, ourBalance,
+	theirBalance lnwire.MilliSatoshi, originalView *lnwallet.HtlcView,
+	chainParams *address.ChainParams,
 	keys lnwallet.CommitmentKeyRing) ([]*Allocation, *cmsg.Commitment,
 	error) {
 
-	log.Tracef("Generating allocations, ourCommit=%v, ourBalance=%d, "+
-		"theirBalance=%d", isOurCommit, ourBalance, theirBalance)
+	log.Tracef("Generating allocations, whoseCommit=%v, ourBalance=%d, "+
+		"theirBalance=%d", whoseCommit, ourBalance, theirBalance)
 
 	// Everywhere we have a isOurCommit boolean we define the local/remote
 	// balances as seen from the perspective of the local node. So if this
@@ -455,7 +458,7 @@ func GenerateCommitmentAllocations(prevState *cmsg.Commitment,
 	// work correctly.
 	localAssetStartBalance := prevState.LocalAssets.Val.Sum()
 	remoteAssetStartBalance := prevState.RemoteAssets.Val.Sum()
-	if !isOurCommit {
+	if whoseCommit.IsRemote() {
 		localAssetStartBalance, remoteAssetStartBalance =
 			remoteAssetStartBalance, localAssetStartBalance
 	}
@@ -464,19 +467,19 @@ func GenerateCommitmentAllocations(prevState *cmsg.Commitment,
 	//nolint:lll
 	ourAssetBalance, theirAssetBalance, filteredView, nonAssetView, err := ComputeView(
 		localAssetStartBalance, remoteAssetStartBalance,
-		isOurCommit, originalView,
+		whoseCommit, originalView,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to compute view: %w", err)
 	}
 
 	dustLimit := chanState.LocalChanCfg.DustLimit
-	if !isOurCommit {
+	if whoseCommit.IsRemote() {
 		dustLimit = chanState.RemoteChanCfg.DustLimit
 	}
 
-	log.Tracef("Computed view, ourCommit=%v, ourAssetBalance=%d, "+
-		"theirAssetBalance=%d, dustLimit=%v", isOurCommit,
+	log.Tracef("Computed view, whoseCommit=%v, ourAssetBalance=%d, "+
+		"theirAssetBalance=%d, dustLimit=%v", whoseCommit,
 		ourAssetBalance, theirAssetBalance, dustLimit)
 
 	// Make sure that every output that carries an asset balance has a
@@ -484,7 +487,7 @@ func GenerateCommitmentAllocations(prevState *cmsg.Commitment,
 	wantLocalAnchor, wantRemoteAnchor, err := SanityCheckAmounts(
 		ourBalance.ToSatoshis(), theirBalance.ToSatoshis(),
 		ourAssetBalance, theirAssetBalance, filteredView,
-		chanState.ChanType, isOurCommit, dustLimit,
+		chanState.ChanType, whoseCommit, dustLimit,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error checking amounts: %w", err)
@@ -497,15 +500,15 @@ func GenerateCommitmentAllocations(prevState *cmsg.Commitment,
 	allocations, err := CreateAllocations(
 		chanState, ourBalance.ToSatoshis(), theirBalance.ToSatoshis(),
 		ourAssetBalance, theirAssetBalance, wantLocalAnchor,
-		wantRemoteAnchor, filteredView, isOurCommit, keys, nonAssetView,
+		wantRemoteAnchor, filteredView, whoseCommit, keys, nonAssetView,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to create allocations: %w",
 			err)
 	}
 
-	log.Tracef("Created allocations, ourCommit=%v, allocations=%v",
-		isOurCommit, limitSpewer.Sdump(allocations))
+	log.Tracef("Created allocations, whoseCommit=%v, allocations=%v",
+		whoseCommit, limitSpewer.Sdump(allocations))
 
 	inputProofs := fn.Map(
 		chanAssetState.Assets(),
@@ -595,15 +598,15 @@ func GenerateCommitmentAllocations(prevState *cmsg.Commitment,
 func CreateAllocations(chanState *channeldb.OpenChannel, ourBalance,
 	theirBalance btcutil.Amount, ourAssetBalance, theirAssetBalance uint64,
 	wantLocalCommitAnchor, wantRemoteCommitAnchor bool,
-	filteredView *DecodedView, isOurCommit bool,
+	filteredView *DecodedView, whoseCommit lntypes.ChannelParty,
 	keys lnwallet.CommitmentKeyRing,
 	nonAssetView *lnwallet.HtlcView) ([]*Allocation, error) {
 
-	log.Tracef("Creating allocations, ourCommit=%v, initiator=%v, "+
+	log.Tracef("Creating allocations, whoseCommit=%v, initiator=%v, "+
 		"ourBalance=%d, theirBalance=%d, ourAssetBalance=%d, "+
 		"theirAssetBalance=%d, wantLocalCommitAnchor=%v, "+
 		"wantRemoteCommitAnchor=%v, ourUpdates=%d, theirUpdates=%d, "+
-		"nonAssetOurUpdates=%d, nonAssetTheirUpdates=%d", isOurCommit,
+		"nonAssetOurUpdates=%d, nonAssetTheirUpdates=%d", whoseCommit,
 		chanState.IsInitiator, ourBalance, theirBalance,
 		ourAssetBalance, theirAssetBalance, wantLocalCommitAnchor,
 		wantRemoteCommitAnchor,
@@ -640,7 +643,7 @@ func CreateAllocations(chanState *channeldb.OpenChannel, ourBalance,
 	}
 
 	var err error
-	if isOurCommit {
+	if whoseCommit.IsLocal() {
 		err = addCommitmentOutputs(
 			chanState.ChanType, &chanState.LocalChanCfg,
 			&chanState.RemoteChanCfg, chanState.IsInitiator,
@@ -672,7 +675,7 @@ func CreateAllocations(chanState *channeldb.OpenChannel, ourBalance,
 	var haveHtlcSplitRoot bool
 	addHtlc := func(htlc *DecodedDescriptor, isIncoming bool) error {
 		htlcScript, err := lnwallet.GenTaprootHtlcScript(
-			isIncoming, isOurCommit, htlc.Timeout, htlc.RHash,
+			isIncoming, whoseCommit, htlc.Timeout, htlc.RHash,
 			&keys, lfn.None[txscript.TapLeaf](),
 		)
 		if err != nil {
@@ -758,7 +761,7 @@ func CreateAllocations(chanState *channeldb.OpenChannel, ourBalance,
 		isIncoming bool) error {
 
 		htlcScript, err := lnwallet.GenTaprootHtlcScript(
-			isIncoming, isOurCommit, htlc.Timeout, htlc.RHash,
+			isIncoming, whoseCommit, htlc.Timeout, htlc.RHash,
 			&keys, lfn.None[txscript.TapLeaf](),
 		)
 		if err != nil {

@@ -31,6 +31,7 @@ import (
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chancloser"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -717,20 +718,21 @@ func (s *Server) waitForReady() error {
 //
 // NOTE: This method is part of the lnwallet.AuxLeafStore interface.
 func (s *Server) FetchLeavesFromView(chanState *channeldb.OpenChannel,
-	prevBlob tlv.Blob, view *lnwallet.HtlcView, isOurCommit bool,
-	ourBalance, theirBalance lnwire.MilliSatoshi,
+	prevBlob tlv.Blob, view *lnwallet.HtlcView,
+	whoseCommit lntypes.ChannelParty, ourBalance,
+	theirBalance lnwire.MilliSatoshi,
 	keys lnwallet.CommitmentKeyRing) (lfn.Option[lnwallet.CommitAuxLeaves],
 	lnwallet.CommitSortFunc, error) {
 
-	srvrLog.Debugf("FetchLeavesFromView called, isOurCommit=%v, "+
+	srvrLog.Debugf("FetchLeavesFromView called, whoseCommit=%v, "+
 		"ourBalance=%v, theirBalance=%v, numOurUpdates=%d, "+
-		"numTheirUpdates=%d", isOurCommit, ourBalance, theirBalance,
+		"numTheirUpdates=%d", whoseCommit, ourBalance, theirBalance,
 		len(view.OurUpdates), len(view.TheirUpdates))
 
 	// The aux leaf creator is fully stateless, and we don't need to wait
 	// for the server to be started before being able to use it.
 	return tapchannel.FetchLeavesFromView(
-		s.chainParams, chanState, prevBlob, view, isOurCommit,
+		s.chainParams, chanState, prevBlob, view, whoseCommit,
 		ourBalance, theirBalance, keys,
 	)
 }
@@ -779,19 +781,20 @@ func (s *Server) FetchLeavesFromRevocation(
 //
 // NOTE: This method is part of the lnwallet.AuxLeafStore interface.
 func (s *Server) ApplyHtlcView(chanState *channeldb.OpenChannel,
-	prevBlob tlv.Blob, originalView *lnwallet.HtlcView, isOurCommit bool,
-	ourBalance, theirBalance lnwire.MilliSatoshi,
+	prevBlob tlv.Blob, originalView *lnwallet.HtlcView,
+	whoseCommit lntypes.ChannelParty, ourBalance,
+	theirBalance lnwire.MilliSatoshi,
 	keys lnwallet.CommitmentKeyRing) (lfn.Option[tlv.Blob], error) {
 
-	srvrLog.Debugf("ApplyHtlcView called, isOurCommit=%v, "+
+	srvrLog.Debugf("ApplyHtlcView called, whoseCommit=%v, "+
 		"ourBalance=%v, theirBalance=%v, numOurUpdates=%d, "+
-		"numTheirUpdates=%d", isOurCommit, ourBalance, theirBalance,
+		"numTheirUpdates=%d", whoseCommit, ourBalance, theirBalance,
 		len(originalView.OurUpdates), len(originalView.TheirUpdates))
 
 	// The aux leaf creator is fully stateless, and we don't need to wait
 	// for the server to be started before being able to use it.
 	return tapchannel.ApplyHtlcView(
-		s.chainParams, chanState, prevBlob, originalView, isOurCommit,
+		s.chainParams, chanState, prevBlob, originalView, whoseCommit,
 		ourBalance, theirBalance, keys,
 	)
 }

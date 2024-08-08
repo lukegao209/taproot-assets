@@ -22,6 +22,7 @@ import (
 	"github.com/lightningnetwork/lnd/channeldb"
 	lfn "github.com/lightningnetwork/lnd/fn"
 	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/btcwallet"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -364,10 +365,10 @@ func verifyHtlcSignature(chainParams *address.ChainParams,
 
 		// We are always verifying the signature of the remote party,
 		// which are for our commitment transaction.
-		const isOurCommit = true
+		const whoseCommit = lntypes.Local
 
 		htlcScript, err := lnwallet.GenTaprootHtlcScript(
-			baseJob.Incoming, isOurCommit, baseJob.HTLC.Timeout,
+			baseJob.Incoming, whoseCommit, baseJob.HTLC.Timeout,
 			baseJob.HTLC.RHash, &keyRing,
 			lfn.None[txscript.TapLeaf](),
 		)
@@ -475,11 +476,11 @@ func (s *AuxLeafSigner) generateHtlcSignature(chanState *channeldb.OpenChannel,
 	}
 
 	// We are always signing the commitment transaction of the remote party,
-	// which is why we set isOurCommit to false.
-	const isOurCommit = false
+	// which is why we set whoseCommit to remote.
+	const whoseCommit = lntypes.Remote
 
 	htlcScript, err := lnwallet.GenTaprootHtlcScript(
-		baseJob.Incoming, isOurCommit, baseJob.HTLC.Timeout,
+		baseJob.Incoming, whoseCommit, baseJob.HTLC.Timeout,
 		baseJob.HTLC.RHash, &baseJob.KeyRing,
 		lfn.None[txscript.TapLeaf](),
 	)

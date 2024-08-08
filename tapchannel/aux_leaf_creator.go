@@ -12,6 +12,7 @@ import (
 	"github.com/lightningnetwork/lnd/channeldb"
 	lfn "github.com/lightningnetwork/lnd/fn"
 	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/tlv"
@@ -27,8 +28,8 @@ const (
 // the passed aux blob, and pending fully evaluated HTLC view.
 func FetchLeavesFromView(chainParams *address.ChainParams,
 	chanState *channeldb.OpenChannel, prevBlob tlv.Blob,
-	originalView *lnwallet.HtlcView, isOurCommit bool, ourBalance,
-	theirBalance lnwire.MilliSatoshi,
+	originalView *lnwallet.HtlcView, whoseCommit lntypes.ChannelParty,
+	ourBalance, theirBalance lnwire.MilliSatoshi,
 	keys lnwallet.CommitmentKeyRing) (lfn.Option[lnwallet.CommitAuxLeaves],
 	lnwallet.CommitSortFunc, error) {
 
@@ -54,7 +55,7 @@ func FetchLeavesFromView(chainParams *address.ChainParams,
 	}
 
 	allocations, newCommitment, err := GenerateCommitmentAllocations(
-		prevState, chanState, chanAssetState, isOurCommit, ourBalance,
+		prevState, chanState, chanAssetState, whoseCommit, ourBalance,
 		theirBalance, originalView, chainParams, keys,
 	)
 	if err != nil {
@@ -200,7 +201,7 @@ func FetchLeavesFromRevocation(
 // blob should be returned that reflects the pending updates.
 func ApplyHtlcView(chainParams *address.ChainParams,
 	chanState *channeldb.OpenChannel, prevBlob tlv.Blob,
-	originalView *lnwallet.HtlcView, isOurCommit bool,
+	originalView *lnwallet.HtlcView, whoseCommit lntypes.ChannelParty,
 	ourBalance, theirBalance lnwire.MilliSatoshi,
 	keys lnwallet.CommitmentKeyRing) (lfn.Option[tlv.Blob], error) {
 
@@ -226,7 +227,7 @@ func ApplyHtlcView(chainParams *address.ChainParams,
 	}
 
 	_, newCommitment, err := GenerateCommitmentAllocations(
-		prevState, chanState, chanAssetState, isOurCommit, ourBalance,
+		prevState, chanState, chanAssetState, whoseCommit, ourBalance,
 		theirBalance, originalView, chainParams, keys,
 	)
 	if err != nil {

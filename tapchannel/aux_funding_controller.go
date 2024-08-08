@@ -37,6 +37,7 @@ import (
 	lfn "github.com/lightningnetwork/lnd/fn"
 	"github.com/lightningnetwork/lnd/funding"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -397,7 +398,8 @@ func (p *pendingAssetFunding) addToFundingCommitment(a *asset.Asset) error {
 func newCommitBlobAndLeaves(pendingFunding *pendingAssetFunding,
 	lndOpenChan *channeldb.OpenChannel, assetOpenChan *cmsg.OpenChannel,
 	keyRing lnwallet.CommitmentKeyRing,
-	localCommit bool) ([]byte, lnwallet.CommitAuxLeaves, error) {
+	whoseCommit lntypes.ChannelParty) ([]byte, lnwallet.CommitAuxLeaves,
+	error) {
 
 	chanAssets := assetOpenChan.FundedAssets.Val.Outputs
 
@@ -412,16 +414,16 @@ func newCommitBlobAndLeaves(pendingFunding *pendingAssetFunding,
 	// the balances in the previous state are reversed and
 	// generateAllocations will flip them back.
 	switch {
-	case pendingFunding.initiator && localCommit:
+	case pendingFunding.initiator && whoseCommit.IsLocal():
 		localAssets = chanAssets
 
-	case pendingFunding.initiator && !localCommit:
+	case pendingFunding.initiator && whoseCommit.IsRemote():
 		remoteAssets = chanAssets
 
-	case !pendingFunding.initiator && localCommit:
+	case !pendingFunding.initiator && whoseCommit.IsLocal():
 		remoteAssets = chanAssets
 
-	case !pendingFunding.initiator && !localCommit:
+	case !pendingFunding.initiator && whoseCommit.IsRemote():
 		localAssets = chanAssets
 	}
 
@@ -440,7 +442,7 @@ func newCommitBlobAndLeaves(pendingFunding *pendingAssetFunding,
 	// With all the above, we'll generate the first commitment that'll be
 	// stored
 	_, firstCommit, err := GenerateCommitmentAllocations(
-		fakePrevState, lndOpenChan, assetOpenChan, localCommit,
+		fakePrevState, lndOpenChan, assetOpenChan, whoseCommit,
 		localSatBalance, remoteSatBalance, fakeView,
 		pendingFunding.chainParams, keyRing,
 	)
@@ -481,13 +483,14 @@ func (p *pendingAssetFunding) toAuxFundingDesc(
 	// Encode the commitment blobs for both the local and remote party.
 	// This will be the information for the very first state (state 0).
 	localCommitBlob, localAuxLeaves, err := newCommitBlobAndLeaves(
-		p, req.openChan, openChanDesc, req.localKeyRing, true,
+		p, req.openChan, openChanDesc, req.localKeyRing, lntypes.Local,
 	)
 	if err != nil {
 		return nil, err
 	}
 	remoteCommitBlob, remoteAuxLeaves, err := newCommitBlobAndLeaves(
-		p, req.openChan, openChanDesc, req.remoteKeyRing, false,
+		p, req.openChan, openChanDesc, req.remoteKeyRing,
+		lntypes.Remote,
 	)
 	if err != nil {
 		return nil, err
